@@ -1,0 +1,25 @@
+{
+  "database": {
+    "host": "localhost",
+    "port": 5432,
+    "name": "analytics_db",
+    "credentials": {
+      "username": "admin",
+      "password": "encrypted"
+    }
+  },
+  "api": {
+    "endpoints": {
+      "users": "/api/v1/users",
+      "products": "/api/v1/products",
+      "orders": "/api/v1/orders"
+    },
+    "rateLimit": 1000,
+    "timeout": 30000
+  },
+  "analytics": {
+    "enabled": true,
+    "trackingId": "UA-12345678-1",
+    "events": ["pageview", "click", "conversion"]
+  }
+}

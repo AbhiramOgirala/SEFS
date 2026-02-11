@@ -1,0 +1,3 @@
+Cloud Computing Infrastructure
+
+Cloud computing provides on-demand access to computing resources over the internet. Major providers include Amazon Web Services, Microsoft Azure, and Google Cloud Platform. Infrastructure as a Service (IaaS) offers virtual machines and storage. Platform as a Service (PaaS) provides development and deployment environments. Serverless computing allows running code without managing servers.

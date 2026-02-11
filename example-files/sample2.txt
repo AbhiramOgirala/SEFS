@@ -1,0 +1,3 @@
+Web Development Technologies
+
+Modern web development involves HTML, CSS, and JavaScript as core technologies. Frontend frameworks like React, Vue, and Angular simplify building interactive user interfaces. Backend development uses Node.js, Python Django, or Ruby on Rails. RESTful APIs enable communication between frontend and backend systems. Responsive design ensures websites work across different devices and screen sizes.

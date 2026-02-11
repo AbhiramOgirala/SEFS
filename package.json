@@ -1,0 +1,53 @@
+{
+  "name": "semantic-entropy-file-system",
+  "version": "1.0.0",
+  "description": "Self-organizing file manager with semantic clustering",
+  "main": "src/main.js",
+  "author": "SEFS Team",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "test-setup": "node test-setup.js",
+    "mixed-examples": "node create-mixed-examples.js",
+    "reset": "node reset-files.js",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux"
+  },
+  "build": {
+    "appId": "com.sefs.app",
+    "productName": "Semantic Entropy File System",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "config.json",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon.icns"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icon.png"
+    }
+  },
+  "dependencies": {
+    "chokidar": "^3.5.3",
+    "pdf-parse": "^1.1.1",
+    "natural": "^6.10.0",
+    "ml-kmeans": "^6.0.0"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  }
+}

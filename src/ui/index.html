@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Semantic Entropy File System</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>🧠 Semantic Entropy File System</h1>
+      <button id="selectFolder">Select Root Folder</button>
+      <span id="virtualModeIndicator" style="color: #4CAF50; margin-left: 1rem; display: none;">
+        📊 Virtual Mode (Files Not Moved)
+      </span>
+      <span id="currentPath"></span>
+    </header>
+
+    <main>
+      <div id="visualization">
+        <svg id="canvas"></svg>
+      </div>
+
+      <div id="sidebar">
+        <h2>Semantic Clusters</h2>
+        <div id="clusterList"></div>
+      </div>
+    </main>
+
+    <div id="tooltip" class="tooltip"></div>
+    <div id="openingIndicator" class="opening-indicator">Opening file...</div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

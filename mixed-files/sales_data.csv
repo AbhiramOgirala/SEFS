@@ -1,0 +1,9 @@
+Date,Product,Quantity,Revenue,Region
+2024-01-01,Laptop,15,22500,North
+2024-01-01,Mouse,45,1350,South
+2024-01-02,Keyboard,30,2400,East
+2024-01-02,Monitor,20,8000,West
+2024-01-03,Laptop,12,18000,North
+2024-01-03,Headphones,50,5000,South
+2024-01-04,Webcam,25,3750,East
+2024-01-04,Mouse,60,1800,West

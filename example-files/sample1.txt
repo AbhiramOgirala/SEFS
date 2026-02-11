@@ -1,0 +1,3 @@
+Machine Learning and Artificial Intelligence
+
+Machine learning is a subset of artificial intelligence that focuses on developing algorithms that can learn from data. Neural networks are computational models inspired by biological neural networks. Deep learning uses multiple layers of neural networks to process complex patterns. Training models requires large datasets and significant computational resources. Common applications include image recognition, natural language processing, and predictive analytics.

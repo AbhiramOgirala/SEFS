@@ -1,0 +1,35 @@
+{
+  "fileTypes": [
+    ".txt", ".md", ".log", ".rtf",
+    ".pdf", ".doc", ".docx",
+    ".js", ".jsx", ".ts", ".tsx", ".py", ".java", ".cpp", ".c", ".cs", ".go", ".rb", ".php", ".swift", ".kt", ".rs",
+    ".html", ".css", ".scss", ".sass", ".less", ".vue",
+    ".json", ".xml", ".yaml", ".yml", ".csv", ".tsv",
+    ".conf", ".config", ".ini", ".env", ".properties",
+    ".sh", ".bash", ".zsh", ".ps1", ".bat", ".cmd",
+    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg", ".webp",
+    ".ppt", ".pptx",
+    ".xls", ".xlsx",
+    ".sql", ".r", ".m", ".scala", ".pl", ".lua"
+  ],
+  "maxFileSize": 10485760,
+  "minClusterSize": 2,
+  "maxClusters": 5,
+  "debounceDelay": 1000,
+  "semanticFolderPrefix": "_semantic_",
+  "virtualMode": true,
+  "excludePatterns": [
+    "node_modules",
+    ".git",
+    ".kiro",
+    "dist",
+    "build",
+    ".next",
+    "__pycache__"
+  ],
+  "security": {
+    "allowFileExecution": false,
+    "sandboxMode": true,
+    "maxContentPreview": 500
+  }
+}

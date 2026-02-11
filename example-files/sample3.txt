@@ -1,0 +1,3 @@
+Data Science and Analytics
+
+Data science combines statistics, programming, and domain expertise to extract insights from data. Python and R are popular programming languages for data analysis. Pandas and NumPy libraries provide powerful data manipulation capabilities. Data visualization tools like Matplotlib and Tableau help communicate findings. Statistical modeling and hypothesis testing are fundamental techniques in data science.

@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-app
+  labels:
+    app: web
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+      - name: web
+        image: myapp:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: DATABASE_HOST
+          value: "postgres-service"
+        resources:
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
