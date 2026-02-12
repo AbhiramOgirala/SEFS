@@ -1,0 +1,1 @@
+Supervised learning requires labeled datasets. Classification and regression are common tasks.

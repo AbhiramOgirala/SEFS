@@ -1,0 +1,1 @@
+Deep learning models use multiple layers of neural networks. Convolutional neural networks excel at image recognition. Recurrent networks handle sequential data effectively.

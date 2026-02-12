@@ -1,0 +1,1 @@
+Machine learning algorithms enable computers to learn from data. Neural networks and deep learning have revolutionized artificial intelligence applications. Training models requires large datasets and computational resources.

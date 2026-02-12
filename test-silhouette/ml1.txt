@@ -1,0 +1,1 @@
+Machine learning algorithms train models using data. Neural networks learn patterns through backpropagation.

@@ -1,0 +1,1 @@
+Advanced persistent threats require sophisticated defense mechanisms. Intrusion detection systems monitor network traffic. Penetration testing identifies security vulnerabilities.

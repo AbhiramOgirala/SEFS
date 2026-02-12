@@ -1,0 +1,1 @@
+Deep learning uses multiple layers. Convolutional networks excel at image recognition tasks.

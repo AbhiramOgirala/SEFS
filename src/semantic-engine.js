@@ -1,7 +1,7 @@
 const fs = require('fs').promises;
 const path = require('path');
 const natural = require('natural');
-const pdfParse = require('pdf-parse');
+const PDFParser = require('pdf2json');
 const { kmeans } = require('ml-kmeans');
 const configLoader = require('./config-loader');
 
@@ -129,8 +129,58 @@ class SemanticEngine {
       
       if (isDuplicate) {
         console.warn(`⚠️  Duplicate content detected for ${path.basename(filePath)}, using filename instead`);
-        // Use filename-based content with heavy repetition for better weight
+        
+        // Check if filename matches the duplicate content topic
         const fileName = path.basename(filePath, path.extname(filePath));
+        const fileNameLower = fileName.toLowerCase();
+        const contentPreview = content.substring(0, 200).toLowerCase();
+        
+        // Detect filename-content mismatch
+        const filenameTopics = {
+          ml: ['machine', 'learning', 'neural', 'algorithm', 'model', 'training'],
+          security: ['security', 'cyber', 'threat', 'attack', 'firewall', 'encryption'],
+          climate: ['climate', 'weather', 'temperature', 'emission', 'warming'],
+          fruit: ['fruit', 'vitamin', 'nutrition', 'apple', 'banana']
+        };
+        
+        let filenameTopic = null;
+        let contentTopic = null;
+        
+        // Detect filename topic
+        for (const [topic, keywords] of Object.entries(filenameTopics)) {
+          if (keywords.some(kw => fileNameLower.includes(kw))) {
+            filenameTopic = topic;
+            break;
+          }
+        }
+        
+        // Detect content topic
+        for (const [topic, keywords] of Object.entries(filenameTopics)) {
+          if (keywords.some(kw => contentPreview.includes(kw))) {
+            contentTopic = topic;
+            break;
+          }
+        }
+        
+        // Warn if mismatch detected
+        if (filenameTopic && contentTopic && filenameTopic !== contentTopic) {
+          console.warn(`⚠️  MISMATCH: Filename suggests "${filenameTopic}" but content is about "${contentTopic}"`);
+          console.warn(`   Using content for clustering, not filename!`);
+          
+          // Use the actual content instead of filename
+          const vector = this.textToVector(content);
+          
+          this.files.set(filePath, {
+            content: content.substring(0, this.config.security.maxContentPreview),
+            vector,
+            cluster: null,
+            name: path.basename(filePath),
+            contentHash
+          });
+          return;
+        }
+        
+        // No mismatch, use filename-based content with heavy repetition for better weight
         const words = fileName
           .replace(/[_-]/g, ' ')
           .replace(/([a-z])([A-Z])/g, '$1 $2')
@@ -185,40 +235,103 @@ class SemanticEngine {
       // PDF files
       if (ext === '.pdf') {
         try {
-          // Read file as a NEW buffer each time (not reused)
-          const dataBuffer = await fs.readFile(filePath);
+          // Use pdf2json for reliable extraction without caching issues
+          const pdfParser = new PDFParser(null, 1); // null = no event emitter, 1 = verbose errors
           
-          // Create a copy of the buffer to prevent caching issues
-          const bufferCopy = Buffer.from(dataBuffer);
+          // Create promise wrapper for pdf2json
+          const extractedText = await new Promise((resolve, reject) => {
+            let textContent = '';
+            
+            pdfParser.on('pdfParser_dataError', (errData) => {
+              reject(new Error(errData.parserError));
+            });
+            
+            pdfParser.on('pdfParser_dataReady', (pdfData) => {
+              try {
+                // Extract text from all pages
+                if (pdfData.Pages && pdfData.Pages.length > 0) {
+                  pdfData.Pages.forEach(page => {
+                    if (page.Texts && page.Texts.length > 0) {
+                      page.Texts.forEach(text => {
+                        if (text.R && text.R.length > 0) {
+                          text.R.forEach(r => {
+                            if (r.T) {
+                              // Decode URI component (pdf2json encodes text)
+                              textContent += decodeURIComponent(r.T) + ' ';
+                            }
+                          });
+                        }
+                      });
+                    }
+                  });
+                }
+                resolve(textContent.trim());
+              } catch (parseError) {
+                reject(parseError);
+              }
+            });
+            
+            // Load PDF file
+            pdfParser.loadPDF(filePath);
+          });
           
-          // Parse PDF with the copied buffer
-          const data = await pdfParse(bufferCopy);
-          
-          if (data.text && data.text.trim().length > 50) {
-            // Verify we got unique content by checking first 50 chars
-            const preview = data.text.substring(0, 50);
-            console.log(`  ✓ PDF: ${path.basename(filePath)} - "${preview}..."`);
-            return data.text;
+          if (extractedText && extractedText.length > 50) {
+            const preview = extractedText.substring(0, 100).replace(/\s+/g, ' ');
+            console.log(`  ✓ PDF: ${path.basename(filePath)}`);
+            console.log(`     "${preview}..."`);
+            
+            // Verify content matches filename expectations
+            const fileNameLower = fileName.toLowerCase();
+            const contentLower = extractedText.toLowerCase();
+            
+            // Extract key terms from filename
+            const fileNameWords = fileNameLower
+              .split(/[_\s-]+/)
+              .filter(w => w.length > 3)
+              .filter(w => !['file', 'document', 'content'].includes(w));
+            
+            // Check if any filename terms appear in content
+            const hasMatch = fileNameWords.some(word => contentLower.includes(word));
+            
+            if (!hasMatch && fileNameWords.length > 0) {
+              console.warn(`⚠️  WARNING: PDF content mismatch detected!`);
+              console.warn(`   File: ${path.basename(filePath)}`);
+              console.warn(`   Expected terms: ${fileNameWords.join(', ')}`);
+              console.warn(`   Content: ${preview}`);
+              console.warn(`   → This PDF may have incorrect content or be corrupted`);
+            }
+            
+            return extractedText;
           } else {
             // PDF parsed but no text - might be image-based PDF
-            console.warn(`PDF has no extractable text: ${path.basename(filePath)}`);
+            console.warn(`⚠️  PDF has no extractable text: ${path.basename(filePath)}`);
+            console.warn(`   → Using filename for clustering`);
+            
             // Use enhanced filename analysis with heavy repetition
             const words = fileName
               .replace(/[_-]/g, ' ')
               .replace(/([a-z])([A-Z])/g, '$1 $2')
               .toLowerCase();
-            // Repeat 10x to give adequate weight
-            return Array(10).fill(words).join(' ');
+            // Repeat 15x to give strong weight in clustering
+            return Array(15).fill(words).join(' ');
           }
         } catch (pdfError) {
-          console.warn(`PDF extraction failed for ${path.basename(filePath)}: ${pdfError.message}`);
+          console.error(`❌ PDF extraction FAILED: ${path.basename(filePath)}`);
+          console.error(`   Error: ${pdfError.message}`);
+          
+          if (pdfError.message.includes('XRef') || pdfError.message.includes('corrupt')) {
+            console.error(`   → PDF appears to be corrupted or malformed`);
+          }
+          
+          console.warn(`   → Falling back to filename-based clustering`);
+          
           // Fallback: use enhanced filename for clustering with heavy repetition
           const words = fileName
             .replace(/[_-]/g, ' ')
             .replace(/([a-z])([A-Z])/g, '$1 $2')
             .toLowerCase();
-          // Repeat 10x to give adequate weight in clustering
-          return Array(10).fill(words).join(' ');
+          // Repeat 15x to give strong weight in clustering
+          return Array(15).fill(words).join(' ');
         }
       }
       
@@ -309,6 +422,37 @@ class SemanticEngine {
     const tokenizer = new natural.WordTokenizer();
     const stemmer = natural.PorterStemmer;
     
+    // Domain-specific term groups for semantic similarity
+    // Files with terms from the same group will have higher similarity
+    const domainGroups = {
+      cybersecurity: [
+        'cybersecurity', 'security', 'cyber', 'attack', 'threat', 'vulnerability',
+        'incident', 'response', 'breach', 'firewall', 'encryption', 'malware',
+        'phishing', 'ransomware', 'intrusion', 'detection', 'network', 'defense',
+        'protection', 'safeguard', 'authentication', 'authorization', 'exploit',
+        'secure', 'securing', 'protected', 'defending', 'monitor', 'monitoring',
+        'intelligence', 'forensic', 'containment', 'eradication', 'recovery',
+        'denial', 'service', 'dos', 'ddos', 'penetration', 'testing', 'audit',
+        'compliance', 'risk', 'assessment', 'mitigation', 'patch', 'update'
+      ],
+      machine_learning: [
+        'machine', 'learning', 'neural', 'network', 'deep', 'algorithm',
+        'model', 'training', 'data', 'artificial', 'intelligence', 'ai',
+        'supervised', 'unsupervised', 'classification', 'regression', 'prediction',
+        'feature', 'dataset', 'accuracy', 'optimization', 'gradient', 'vision',
+        'computer', 'image', 'recognition', 'convolutional', 'layer', 'activation'
+      ],
+      climate: [
+        'climate', 'weather', 'temperature', 'global', 'warming', 'emission',
+        'carbon', 'greenhouse', 'environment', 'renewable', 'energy', 'solar',
+        'wind', 'fossil', 'pollution', 'sustainability', 'ecological'
+      ],
+      food_nutrition: [
+        'fruit', 'food', 'nutrition', 'vitamin', 'mineral', 'healthy', 'diet',
+        'organic', 'vegetable', 'protein', 'fiber', 'antioxidant', 'nutrient'
+      ]
+    };
+    
     // Normalize text
     let normalized = text.toLowerCase()
       .replace(/[^\w\s]/g, ' ')  // Remove punctuation
@@ -347,6 +491,18 @@ class SemanticEngine {
       const bigram = `${filtered[i]}_${filtered[i + 1]}`;
       freq[bigram] = (freq[bigram] || 0) + 0.5; // Weight bigrams slightly less
     }
+    
+    // Add domain markers to boost similarity within same domain
+    // This helps group related files even if they use different terminology
+    Object.entries(domainGroups).forEach(([domain, terms]) => {
+      const stemmedTerms = terms.map(t => stemmer.stem(t));
+      const matchCount = stemmedTerms.filter(t => freq[t] > 0).length;
+      
+      // If file has multiple terms from a domain, add a domain marker
+      if (matchCount >= 2) {
+        freq[`__domain_${domain}__`] = matchCount * 5; // Increased from 2 to 5 for stronger domain affinity
+      }
+    });
     
     return freq;
   }
@@ -471,7 +627,7 @@ class SemanticEngine {
     }
 
     // Determine optimal cluster count using elbow method
-    const maxClusters = Math.min(Math.ceil(Math.sqrt(fileEntries.length)), 10);
+    const maxClusters = Math.min(Math.ceil(Math.sqrt(fileEntries.length) * 1.5), 12);
     const minClusters = Math.min(2, fileEntries.length);
     const numClusters = this.determineOptimalClusters(normalizedVectors, minClusters, maxClusters);
     console.log(`📍 Optimal clusters determined: ${numClusters} (tested range: ${minClusters}-${maxClusters})`);
@@ -523,22 +679,84 @@ class SemanticEngine {
     }
   }
 
-  // Determine optimal number of clusters using elbow method with silhouette analysis
+  // Calculate silhouette score for a clustering result
+  calculateSilhouetteScore(vectors, clusterAssignments) {
+    const n = vectors.length;
+    if (n <= 1) return 0;
+    
+    const numClusters = Math.max(...clusterAssignments) + 1;
+    
+    // Group vectors by cluster
+    const clusters = Array(numClusters).fill(null).map(() => []);
+    clusterAssignments.forEach((clusterId, idx) => {
+      clusters[clusterId].push(idx);
+    });
+    
+    // Calculate silhouette for each point
+    let totalSilhouette = 0;
+    
+    for (let i = 0; i < n; i++) {
+      const myCluster = clusterAssignments[i];
+      const myClusterPoints = clusters[myCluster];
+      
+      if (myClusterPoints.length === 1) {
+        // Single point in cluster, silhouette = 0
+        continue;
+      }
+      
+      // Calculate a(i): average distance to points in same cluster
+      let a = 0;
+      for (const j of myClusterPoints) {
+        if (i !== j) {
+          a += this.euclideanDistance(vectors[i], vectors[j]);
+        }
+      }
+      a /= (myClusterPoints.length - 1);
+      
+      // Calculate b(i): minimum average distance to points in other clusters
+      let b = Infinity;
+      for (let otherCluster = 0; otherCluster < numClusters; otherCluster++) {
+        if (otherCluster === myCluster) continue;
+        
+        const otherPoints = clusters[otherCluster];
+        if (otherPoints.length === 0) continue;
+        
+        let avgDist = 0;
+        for (const j of otherPoints) {
+          avgDist += this.euclideanDistance(vectors[i], vectors[j]);
+        }
+        avgDist /= otherPoints.length;
+        
+        b = Math.min(b, avgDist);
+      }
+      
+      // Silhouette for this point
+      const s = (b - a) / Math.max(a, b);
+      totalSilhouette += s;
+    }
+    
+    return totalSilhouette / n;
+  }
+
+  // Determine optimal number of clusters using silhouette analysis
   determineOptimalClusters(vectors, minK, maxK) {
     if (vectors.length <= minK) return minK;
     if (vectors.length <= 3) return Math.min(2, maxK);
     
-    // For small to medium datasets, use elbow method
-    const scores = [];
-    const testRange = [];
+    console.log('  Testing different cluster counts...');
     
+    const scores = [];
+    
+    // Test each k value
     for (let k = minK; k <= Math.min(maxK, vectors.length - 1); k++) {
-      testRange.push(k);
       try {
         const result = kmeans(vectors, k, { 
           initialization: 'kmeans++',
-          maxIterations: 50
+          maxIterations: 100
         });
+        
+        // Calculate silhouette score (measures cluster quality)
+        const silhouette = this.calculateSilhouetteScore(vectors, result.clusters);
         
         // Calculate within-cluster sum of squares (WCSS)
         let wcss = 0;
@@ -549,9 +767,21 @@ class SemanticEngine {
           wcss += dist * dist;
         });
         
-        scores.push({ k, wcss });
+        // Calculate cluster size variance (penalize unbalanced clusters)
+        const clusterSizes = Array(k).fill(0);
+        result.clusters.forEach(c => clusterSizes[c]++);
+        const avgSize = vectors.length / k;
+        const sizeVariance = clusterSizes.reduce((sum, size) => 
+          sum + Math.pow(size - avgSize, 2), 0) / k;
+        const balancePenalty = sizeVariance / (avgSize * avgSize);
+        
+        // Combined score: silhouette - balance penalty
+        const combinedScore = silhouette - (balancePenalty * 0.1);
+        
+        scores.push({ k, silhouette, wcss, balancePenalty, combinedScore });
+        console.log(`    k=${k}: silhouette=${silhouette.toFixed(3)}, balance=${balancePenalty.toFixed(3)}, score=${combinedScore.toFixed(3)}`);
       } catch (error) {
-        // If clustering fails for this k, skip it
+        console.log(`    k=${k}: clustering failed`);
         continue;
       }
     }
@@ -560,30 +790,24 @@ class SemanticEngine {
       return Math.min(Math.ceil(Math.sqrt(vectors.length)), maxK);
     }
     
-    // Find elbow point (maximum rate of decrease)
+    // Find k with highest combined score
     let bestK = minK;
-    let maxDecrease = 0;
+    let bestScore = -Infinity;
     
-    for (let i = 1; i < scores.length - 1; i++) {
-      const decrease = scores[i - 1].wcss - scores[i].wcss;
-      const nextDecrease = scores[i].wcss - scores[i + 1].wcss;
-      const elbowScore = decrease - nextDecrease;
-      
-      if (elbowScore > maxDecrease) {
-        maxDecrease = elbowScore;
-        bestK = scores[i].k;
+    for (const score of scores) {
+      if (score.combinedScore > bestScore) {
+        bestScore = score.combinedScore;
+        bestK = score.k;
       }
     }
     
-    // If no clear elbow, use a more aggressive heuristic
-    if (maxDecrease === 0) {
-      // For 5-10 files, prefer 3-4 clusters
-      // For 10-20 files, prefer 4-5 clusters
-      if (vectors.length <= 10) {
-        bestK = Math.min(Math.max(3, Math.ceil(vectors.length / 2.5)), maxK);
-      } else {
-        bestK = Math.min(Math.max(4, Math.ceil(Math.sqrt(vectors.length) * 1.2)), maxK);
-      }
+    console.log(`  Best k=${bestK} with combined score ${bestScore.toFixed(3)}`);
+    
+    // If silhouette score is very low (< 0.15), clusters are poorly separated
+    const bestSilhouette = scores.find(s => s.k === bestK).silhouette;
+    if (bestSilhouette < 0.15) {
+      console.log(`  ⚠️  Low silhouette score (${bestSilhouette.toFixed(3)}) indicates weak cluster separation`);
+      console.log(`     This may be due to short documents or overlapping topics`);
     }
     
     return bestK;
@@ -661,6 +885,33 @@ class SemanticEngine {
         
         // Remove cluster2
         this.clusters.delete(id2);
+      }
+    });
+    
+    // Check for "miscellaneous" clusters (files with low intra-cluster similarity)
+    // These should potentially be split or marked as outliers
+    this.clusters.forEach((cluster, id) => {
+      if (cluster.files.length < 2) return; // Skip single-file clusters
+      
+      // Calculate average intra-cluster similarity
+      let totalSim = 0;
+      let count = 0;
+      
+      for (let i = 0; i < cluster.files.length; i++) {
+        for (let j = i + 1; j < cluster.files.length; j++) {
+          const file1 = this.files.get(cluster.files[i]);
+          const file2 = this.files.get(cluster.files[j]);
+          totalSim += this.cosineSimilarity(file1.vector, file2.vector);
+          count++;
+        }
+      }
+      
+      const avgSim = count > 0 ? totalSim / count : 0;
+      
+      // Warn if cluster has low cohesion (files aren't similar to each other)
+      if (avgSim < 0.15 && cluster.files.length > 2) {
+        console.log(`  ⚠️  Cluster "${cluster.name}" has low cohesion (avg similarity: ${avgSim.toFixed(3)})`);
+        console.log(`     This cluster may contain unrelated files grouped together`);
       }
     });
   }
@@ -824,15 +1075,70 @@ class SemanticEngine {
   async handleFileChange(filePath) {
     if (!this.isValidFile(filePath)) return;
     
-    await this.processFile(filePath);
+    console.log(`\n📝 File change detected: ${path.basename(filePath)}`);
+    console.log('🔄 Re-processing all files to update TF-IDF weights...');
+    
+    // When a new file is added, we need to:
+    // 1. Re-process ALL files to recalculate TF-IDF with new vocabulary
+    // 2. Re-cluster with updated vectors
+    // Simply adding the new file with old TF-IDF weights will cause incorrect clustering
+    
+    // Clear existing data
+    const existingFiles = Array.from(this.files.keys());
+    this.files.clear();
+    
+    // Re-process all files including the new one
+    const allFiles = await this.getAllFiles(this.rootPath);
+    const validFiles = allFiles.filter(f => this.isValidFile(f));
+    
+    console.log(`Processing ${validFiles.length} files (including new file)...`);
+    
+    for (const file of validFiles) {
+      await this.processFile(file);
+    }
+    
+    console.log('✓ All files re-processed with updated vocabulary');
+    
+    // Re-cluster with new TF-IDF weights
     await this.performClustering();
-    await this.organizeFolders();
+    
+    // Organize folders if not in virtual mode
+    if (!this.config.virtualMode) {
+      await this.organizeFolders();
+    }
   }
 
   async handleFileDelete(filePath) {
+    console.log(`\n🗑️  File deletion detected: ${path.basename(filePath)}`);
+    
+    // Remove from tracking
     this.files.delete(filePath);
+    
+    if (this.files.size === 0) {
+      console.log('No files remaining, clearing clusters');
+      this.clusters.clear();
+      return;
+    }
+    
+    console.log('🔄 Re-processing remaining files to update TF-IDF weights...');
+    
+    // Re-process all remaining files to recalculate TF-IDF
+    const remainingFiles = Array.from(this.files.keys());
+    this.files.clear();
+    
+    for (const file of remainingFiles) {
+      await this.processFile(file);
+    }
+    
+    console.log('✓ Remaining files re-processed with updated vocabulary');
+    
+    // Re-cluster
     await this.performClustering();
-    await this.organizeFolders();
+    
+    // Organize folders if not in virtual mode
+    if (!this.config.virtualMode) {
+      await this.organizeFolders();
+    }
   }
 }
 
