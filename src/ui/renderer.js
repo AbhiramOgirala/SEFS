@@ -426,16 +426,19 @@ function renderVisualization() {
 }
 
 function calculateClusterPositions(clusters, width, height) {
-  const padding = 140;
+  const padding = 100;
   const positions = [];
   
   const cols = Math.ceil(Math.sqrt(clusters.length));
   const rows = Math.ceil(clusters.length / cols);
   
-  // Add spacing between clusters
-  const spacingMultiplier = 1.3; // Increase cell size to create gaps
-  const cellWidth = (width - padding * 2) / cols * spacingMultiplier;
-  const cellHeight = (height - padding * 2) / rows * spacingMultiplier;
+  // Calculate available space
+  const availableWidth = width - padding * 2;
+  const availableHeight = height - padding * 2;
+  
+  // Calculate cell dimensions without multiplier first
+  const baseCellWidth = availableWidth / cols;
+  const baseCellHeight = availableHeight / rows;
   
   // Find min and max file counts for scaling
   const fileCounts = clusters.map(c => c.files.length);
@@ -446,11 +449,12 @@ function calculateClusterPositions(clusters, width, height) {
     const col = idx % cols;
     const row = Math.floor(idx / cols);
     
-    const x = padding + col * cellWidth + cellWidth / 2;
-    const y = padding + row * cellHeight + cellHeight / 2;
+    // Center clusters in their cells
+    const x = padding + col * baseCellWidth + baseCellWidth / 2;
+    const y = padding + row * baseCellHeight + baseCellHeight / 2;
     
-    // Calculate base radius - keep circles large but with more space between them
-    const baseRadius = Math.min(cellWidth, cellHeight) / 3.2;
+    // Calculate base radius - leave space between clusters
+    const baseRadius = Math.min(baseCellWidth, baseCellHeight) / 2.8;
     
     // Scale radius based on file count (between 0.75 and 1.15 of base)
     let scaleFactor = 1;
