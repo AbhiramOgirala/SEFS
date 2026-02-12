@@ -450,6 +450,22 @@ class SemanticEngine {
       food_nutrition: [
         'fruit', 'food', 'nutrition', 'vitamin', 'mineral', 'healthy', 'diet',
         'organic', 'vegetable', 'protein', 'fiber', 'antioxidant', 'nutrient'
+      ],
+      travel: [
+        'travel', 'trip', 'journey', 'destination', 'vacation', 'holiday',
+        'tourist', 'tourism', 'explore', 'adventure', 'flight', 'hotel',
+        'booking', 'itinerary', 'passport', 'visa', 'luggage', 'backpack',
+        'sightseeing', 'landmark', 'culture', 'local', 'guide', 'tour',
+        'beach', 'mountain', 'city', 'country', 'continent', 'world',
+        'wanderlust', 'expedition', 'cruise', 'resort', 'accommodation'
+      ],
+      movies_entertainment: [
+        'movie', 'film', 'cinema', 'theater', 'actor', 'actress', 'director',
+        'producer', 'screenplay', 'script', 'scene', 'character', 'plot',
+        'genre', 'drama', 'comedy', 'action', 'thriller', 'horror', 'romance',
+        'documentary', 'animation', 'blockbuster', 'premiere', 'release',
+        'box', 'office', 'review', 'rating', 'award', 'oscar', 'hollywood',
+        'entertainment', 'show', 'series', 'episode', 'season', 'streaming'
       ]
     };
     
@@ -500,7 +516,7 @@ class SemanticEngine {
       
       // If file has multiple terms from a domain, add a domain marker
       if (matchCount >= 2) {
-        freq[`__domain_${domain}__`] = matchCount * 5; // Increased from 2 to 5 for stronger domain affinity
+        freq[`__domain_${domain}__`] = matchCount * 10; // Increased from 5 to 10 for even stronger domain separation
       }
     });
     
