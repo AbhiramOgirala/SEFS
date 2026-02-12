@@ -1,0 +1,1 @@
+Machine learning algorithms enable computers to learn from data. Supervised learning uses labeled datasets to train models. Neural networks and deep learning have revolutionized artificial intelligence applications.

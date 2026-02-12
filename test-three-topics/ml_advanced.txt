@@ -1,0 +1,1 @@
+Deep learning models use multiple layers of neural networks. Training algorithms optimize weights through backpropagation. Machine learning frameworks like TensorFlow enable efficient model development.

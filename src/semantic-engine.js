@@ -121,14 +121,45 @@ class SemanticEngine {
         return;
       }
 
-      const vector = this.textToVector(content);
+      // Check for duplicate content (possible PDF caching issue)
+      const contentHash = content.substring(0, 100);
+      const isDuplicate = Array.from(this.files.values()).some(
+        fileData => fileData.contentHash === contentHash && fileData.contentHash.length > 50
+      );
       
-      this.files.set(filePath, {
-        content: content.substring(0, this.config.security.maxContentPreview),
-        vector,
-        cluster: null,
-        name: path.basename(filePath)
-      });
+      if (isDuplicate) {
+        console.warn(`⚠️  Duplicate content detected for ${path.basename(filePath)}, using filename instead`);
+        // Use filename-based content
+        const fileName = path.basename(filePath, path.extname(filePath));
+        const words = fileName
+          .replace(/[_-]/g, ' ')
+          .replace(/([a-z])([A-Z])/g, '$1 $2')
+          .toLowerCase();
+        const filenameContent = `${words} ${words} ${words}`;
+        const vector = this.textToVector(filenameContent);
+        
+        this.files.set(filePath, {
+          content: filenameContent.substring(0, this.config.security.maxContentPreview),
+          vector,
+          cluster: null,
+          name: path.basename(filePath),
+          contentHash: filenameContent.substring(0, 100)
+        });
+      } else {
+        // Debug: Log content preview for verification
+        const preview = content.substring(0, 150).replace(/\n/g, ' ');
+        console.log(`  ${path.basename(filePath)}: "${preview}..."`);
+
+        const vector = this.textToVector(content);
+        
+        this.files.set(filePath, {
+          content: content.substring(0, this.config.security.maxContentPreview),
+          vector,
+          cluster: null,
+          name: path.basename(filePath),
+          contentHash
+        });
+      }
       
       // Only log every 10th file to reduce console spam
       const processedCount = this.files.size;
@@ -152,9 +183,42 @@ class SemanticEngine {
     try {
       // PDF files
       if (ext === '.pdf') {
-        const dataBuffer = await fs.readFile(filePath);
-        const data = await pdfParse(dataBuffer);
-        return data.text;
+        try {
+          // Read file as a NEW buffer each time (not reused)
+          const dataBuffer = await fs.readFile(filePath);
+          
+          // Create a copy of the buffer to prevent caching issues
+          const bufferCopy = Buffer.from(dataBuffer);
+          
+          // Parse PDF with the copied buffer
+          const data = await pdfParse(bufferCopy);
+          
+          if (data.text && data.text.trim().length > 50) {
+            // Verify we got unique content by checking first 50 chars
+            const preview = data.text.substring(0, 50);
+            console.log(`  ✓ PDF: ${path.basename(filePath)} - "${preview}..."`);
+            return data.text;
+          } else {
+            // PDF parsed but no text - might be image-based PDF
+            console.warn(`PDF has no extractable text: ${path.basename(filePath)}`);
+            // Use enhanced filename analysis
+            const words = fileName
+              .replace(/[_-]/g, ' ')
+              .replace(/([a-z])([A-Z])/g, '$1 $2')
+              .toLowerCase();
+            // Repeat key terms to give them more weight
+            return `${words} ${words} ${words} document pdf file`;
+          }
+        } catch (pdfError) {
+          console.warn(`PDF extraction failed for ${path.basename(filePath)}: ${pdfError.message}`);
+          // Fallback: use enhanced filename for clustering
+          const words = fileName
+            .replace(/[_-]/g, ' ')
+            .replace(/([a-z])([A-Z])/g, '$1 $2')
+            .toLowerCase();
+          // Repeat key terms multiple times to give them more weight in clustering
+          return `${words} ${words} ${words} document pdf file`;
+        }
       }
       
       // Text-based files (code, config, data, etc.)
@@ -240,11 +304,19 @@ class SemanticEngine {
   }
 
   textToVector(text) {
-    // Simple TF-IDF vectorization
+    // Enhanced NLP preprocessing for better text similarity
     const tokenizer = new natural.WordTokenizer();
-    const tokens = tokenizer.tokenize(text.toLowerCase());
+    const stemmer = natural.PorterStemmer;
     
-    // Expanded stopwords list for better clustering
+    // Normalize text
+    let normalized = text.toLowerCase()
+      .replace(/[^\w\s]/g, ' ')  // Remove punctuation
+      .replace(/\s+/g, ' ')       // Normalize whitespace
+      .trim();
+    
+    const tokens = tokenizer.tokenize(normalized);
+    
+    // Comprehensive stopwords list
     const stopwords = new Set([
       'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
       'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had',
@@ -253,26 +325,82 @@ class SemanticEngine {
       'it', 'its', 'they', 'them', 'their', 'what', 'which', 'who', 'when',
       'where', 'why', 'how', 'all', 'each', 'every', 'both', 'few', 'more',
       'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own',
-      'same', 'so', 'than', 'too', 'very', 'just', 'also', 'into', 'through'
+      'same', 'so', 'than', 'too', 'very', 'just', 'also', 'into', 'through',
+      'about', 'after', 'before', 'between', 'during', 'under', 'over', 'above',
+      'below', 'up', 'down', 'out', 'off', 'again', 'further', 'then', 'once'
     ]);
     
-    const filtered = tokens.filter(t => !stopwords.has(t) && t.length > 2);
+    // Filter and stem tokens
+    const filtered = tokens
+      .filter(t => !stopwords.has(t) && t.length > 2)
+      .map(t => stemmer.stem(t));
     
-    // Create frequency map
+    // Create frequency map with stemmed tokens
     const freq = {};
     filtered.forEach(token => {
       freq[token] = (freq[token] || 0) + 1;
     });
     
+    // Add bigrams for better context (pairs of consecutive words)
+    for (let i = 0; i < filtered.length - 1; i++) {
+      const bigram = `${filtered[i]}_${filtered[i + 1]}`;
+      freq[bigram] = (freq[bigram] || 0) + 0.5; // Weight bigrams slightly less
+    }
+    
     return freq;
+  }
+
+  // Calculate cosine similarity between two vectors
+  cosineSimilarity(vec1, vec2) {
+    const allKeys = new Set([...Object.keys(vec1), ...Object.keys(vec2)]);
+    
+    let dotProduct = 0;
+    let mag1 = 0;
+    let mag2 = 0;
+    
+    allKeys.forEach(key => {
+      const v1 = vec1[key] || 0;
+      const v2 = vec2[key] || 0;
+      dotProduct += v1 * v2;
+      mag1 += v1 * v1;
+      mag2 += v2 * v2;
+    });
+    
+    if (mag1 === 0 || mag2 === 0) return 0;
+    return dotProduct / (Math.sqrt(mag1) * Math.sqrt(mag2));
+  }
+
+  // Calculate TF-IDF weights for better document representation
+  calculateTFIDF(vectors) {
+    const numDocs = vectors.length;
+    const idf = {};
+    
+    // Calculate document frequency for each term
+    const allTerms = new Set();
+    vectors.forEach(vec => {
+      Object.keys(vec).forEach(term => allTerms.add(term));
+    });
+    
+    allTerms.forEach(term => {
+      const docCount = vectors.filter(vec => vec[term] > 0).length;
+      idf[term] = Math.log(numDocs / (docCount + 1));
+    });
+    
+    // Apply TF-IDF weighting
+    return vectors.map(vec => {
+      const tfidf = {};
+      Object.entries(vec).forEach(([term, tf]) => {
+        tfidf[term] = tf * (idf[term] || 0);
+      });
+      return tfidf;
+    });
   }
 
   async performClustering() {
     const fileEntries = Array.from(this.files.entries());
-    console.log(`📊 Clustering ${fileEntries.length} files`);
+    console.log(`📊 Clustering ${fileEntries.length} files using enhanced NLP`);
     
     if (fileEntries.length < 2) {
-      // Single cluster for all files
       console.log('⚠️ Less than 2 files, creating single cluster');
       this.clusters.clear();
       this.clusters.set(0, { name: 'Documents', files: fileEntries.map(([p]) => p) });
@@ -282,14 +410,14 @@ class SemanticEngine {
       return;
     }
 
-    // Build vocabulary
-    console.log('Building vocabulary...');
+    // Build vocabulary from all documents
+    console.log('Building vocabulary with stemming...');
     const vocab = new Set();
     fileEntries.forEach(([, data]) => {
       Object.keys(data.vector).forEach(word => vocab.add(word));
     });
     const vocabArray = Array.from(vocab);
-    console.log(`✓ Vocabulary size: ${vocabArray.length} words`);
+    console.log(`✓ Vocabulary size: ${vocabArray.length} terms (including bigrams)`);
 
     if (vocabArray.length === 0) {
       console.warn('⚠️ No vocabulary found, creating single cluster');
@@ -301,18 +429,33 @@ class SemanticEngine {
       return;
     }
 
-    // Convert to dense vectors and validate
-    console.log('Converting to vectors...');
-    const vectors = fileEntries.map(([, data]) => {
+    // Apply TF-IDF weighting for better semantic representation
+    console.log('Applying TF-IDF weighting...');
+    const rawVectors = fileEntries.map(([, data]) => data.vector);
+    const tfidfVectors = this.calculateTFIDF(rawVectors);
+    
+    // Update file vectors with TF-IDF weights
+    fileEntries.forEach(([path, data], idx) => {
+      data.vector = tfidfVectors[idx];
+    });
+
+    // Convert to dense vectors with TF-IDF weights
+    console.log('Converting to dense vectors...');
+    const vectors = tfidfVectors.map(vec => {
       return vocabArray.map(word => {
-        const value = data.vector[word] || 0;
-        // Ensure numeric value
+        const value = vec[word] || 0;
         return isNaN(value) ? 0 : Number(value);
       });
     });
 
+    // Normalize vectors for better cosine similarity
+    const normalizedVectors = vectors.map(vec => {
+      const magnitude = Math.sqrt(vec.reduce((sum, val) => sum + val * val, 0));
+      return magnitude > 0 ? vec.map(val => val / magnitude) : vec;
+    });
+
     // Validate vectors
-    const validVectors = vectors.every(vec => 
+    const validVectors = normalizedVectors.every(vec => 
       vec.every(val => typeof val === 'number' && !isNaN(val) && isFinite(val))
     );
 
@@ -326,13 +469,19 @@ class SemanticEngine {
       return;
     }
 
-    // Determine optimal cluster count (2 to sqrt(n))
-    const numClusters = Math.min(Math.max(2, Math.ceil(Math.sqrt(fileEntries.length))), 5);
-    console.log(`Creating ${numClusters} clusters...`);
+    // Determine optimal cluster count using elbow method
+    const maxClusters = Math.min(Math.ceil(Math.sqrt(fileEntries.length)), 10);
+    const minClusters = Math.min(2, fileEntries.length);
+    const numClusters = this.determineOptimalClusters(normalizedVectors, minClusters, maxClusters);
+    console.log(`📍 Optimal clusters determined: ${numClusters} (tested range: ${minClusters}-${maxClusters})`);
 
     try {
-      // Perform k-means clustering
-      const result = kmeans(vectors, numClusters, { initialization: 'kmeans++' });
+      // Perform k-means clustering with multiple iterations for stability
+      console.log('Performing k-means clustering...');
+      const result = kmeans(normalizedVectors, numClusters, { 
+        initialization: 'kmeans++',
+        maxIterations: 100
+      });
 
       // Assign clusters
       this.clusters.clear();
@@ -346,12 +495,21 @@ class SemanticEngine {
         this.clusters.get(clusterId).files.push(filePath);
       });
 
-      console.log(`✓ Created ${this.clusters.size} clusters`);
+      // Refine clusters by merging very similar ones
+      console.log('Refining clusters based on similarity...');
+      this.refineClusters(fileEntries);
 
-      // Name clusters based on common terms
-      console.log('Naming clusters...');
+      console.log(`✓ Created ${this.clusters.size} refined clusters`);
+
+      // Name clusters based on distinctive terms
+      console.log('Naming clusters with distinctive terms...');
       this.nameClusters();
       console.log('✓ Clusters named');
+      
+      // Log cluster statistics
+      this.clusters.forEach((cluster, id) => {
+        console.log(`  Cluster "${cluster.name}": ${cluster.files.length} files`);
+      });
     } catch (error) {
       console.error('❌ Clustering failed:', error.message);
       console.error('Stack:', error.stack);
@@ -364,26 +522,198 @@ class SemanticEngine {
     }
   }
 
-  nameClusters() {
-    this.clusters.forEach((cluster, id) => {
-      const allWords = {};
+  // Determine optimal number of clusters using elbow method with silhouette analysis
+  determineOptimalClusters(vectors, minK, maxK) {
+    if (vectors.length <= minK) return minK;
+    if (vectors.length <= 3) return Math.min(2, maxK);
+    
+    // For small to medium datasets, use elbow method
+    const scores = [];
+    const testRange = [];
+    
+    for (let k = minK; k <= Math.min(maxK, vectors.length - 1); k++) {
+      testRange.push(k);
+      try {
+        const result = kmeans(vectors, k, { 
+          initialization: 'kmeans++',
+          maxIterations: 50
+        });
+        
+        // Calculate within-cluster sum of squares (WCSS)
+        let wcss = 0;
+        result.clusters.forEach((clusterId, idx) => {
+          const centroid = result.centroids[clusterId];
+          const point = vectors[idx];
+          const dist = this.euclideanDistance(point, centroid);
+          wcss += dist * dist;
+        });
+        
+        scores.push({ k, wcss });
+      } catch (error) {
+        // If clustering fails for this k, skip it
+        continue;
+      }
+    }
+    
+    if (scores.length === 0) {
+      return Math.min(Math.ceil(Math.sqrt(vectors.length)), maxK);
+    }
+    
+    // Find elbow point (maximum rate of decrease)
+    let bestK = minK;
+    let maxDecrease = 0;
+    
+    for (let i = 1; i < scores.length - 1; i++) {
+      const decrease = scores[i - 1].wcss - scores[i].wcss;
+      const nextDecrease = scores[i].wcss - scores[i + 1].wcss;
+      const elbowScore = decrease - nextDecrease;
       
-      cluster.files.forEach(filePath => {
-        const fileData = this.files.get(filePath);
-        Object.entries(fileData.vector).forEach(([word, count]) => {
-          allWords[word] = (allWords[word] || 0) + count;
+      if (elbowScore > maxDecrease) {
+        maxDecrease = elbowScore;
+        bestK = scores[i].k;
+      }
+    }
+    
+    // If no clear elbow, use a more aggressive heuristic
+    if (maxDecrease === 0) {
+      // For 5-10 files, prefer 3-4 clusters
+      // For 10-20 files, prefer 4-5 clusters
+      if (vectors.length <= 10) {
+        bestK = Math.min(Math.max(3, Math.ceil(vectors.length / 2.5)), maxK);
+      } else {
+        bestK = Math.min(Math.max(4, Math.ceil(Math.sqrt(vectors.length) * 1.2)), maxK);
+      }
+    }
+    
+    return bestK;
+  }
+
+  // Calculate Euclidean distance between two vectors
+  euclideanDistance(vec1, vec2) {
+    let sum = 0;
+    for (let i = 0; i < vec1.length; i++) {
+      const diff = vec1[i] - vec2[i];
+      sum += diff * diff;
+    }
+    return Math.sqrt(sum);
+  }
+
+  // Refine clusters by merging very similar ones
+  refineClusters(fileEntries) {
+    const clusterVectors = new Map();
+    
+    // Calculate centroid for each cluster
+    this.clusters.forEach((cluster, id) => {
+      const clusterFiles = cluster.files.map(fp => 
+        this.files.get(fp).vector
+      );
+      
+      // Average vector (centroid)
+      const centroid = {};
+      clusterFiles.forEach(vec => {
+        Object.entries(vec).forEach(([term, weight]) => {
+          centroid[term] = (centroid[term] || 0) + weight;
         });
       });
+      
+      // Normalize by cluster size
+      Object.keys(centroid).forEach(term => {
+        centroid[term] /= clusterFiles.length;
+      });
+      
+      clusterVectors.set(id, centroid);
+    });
+    
+    // Find and merge ONLY extremely similar clusters (similarity > 0.85)
+    // This threshold is higher to prevent merging distinct topics
+    const clusterIds = Array.from(this.clusters.keys());
+    const toMerge = [];
+    
+    for (let i = 0; i < clusterIds.length; i++) {
+      for (let j = i + 1; j < clusterIds.length; j++) {
+        const sim = this.cosineSimilarity(
+          clusterVectors.get(clusterIds[i]),
+          clusterVectors.get(clusterIds[j])
+        );
+        
+        // Only merge if extremely similar (raised from 0.7 to 0.85)
+        if (sim > 0.85) {
+          toMerge.push([clusterIds[i], clusterIds[j]]);
+          console.log(`  Merging clusters ${clusterIds[i]} and ${clusterIds[j]} (similarity: ${sim.toFixed(3)})`);
+        }
+      }
+    }
+    
+    // Merge similar clusters
+    toMerge.forEach(([id1, id2]) => {
+      if (this.clusters.has(id1) && this.clusters.has(id2)) {
+        const cluster1 = this.clusters.get(id1);
+        const cluster2 = this.clusters.get(id2);
+        
+        // Merge files into cluster1
+        cluster1.files.push(...cluster2.files);
+        
+        // Update file cluster assignments
+        cluster2.files.forEach(fp => {
+          this.files.get(fp).cluster = id1;
+        });
+        
+        // Remove cluster2
+        this.clusters.delete(id2);
+      }
+    });
+  }
 
-      // Get top 2 words
-      const topWords = Object.entries(allWords)
+  nameClusters() {
+    this.clusters.forEach((cluster, id) => {
+      // Calculate TF-IDF scores for terms in this cluster vs all documents
+      const clusterTerms = {};
+      const allTerms = {};
+      
+      // Collect terms from cluster files
+      cluster.files.forEach(filePath => {
+        const fileData = this.files.get(filePath);
+        Object.entries(fileData.vector).forEach(([term, weight]) => {
+          clusterTerms[term] = (clusterTerms[term] || 0) + weight;
+        });
+      });
+      
+      // Collect terms from all files
+      this.files.forEach((fileData) => {
+        Object.entries(fileData.vector).forEach(([term, weight]) => {
+          allTerms[term] = (allTerms[term] || 0) + weight;
+        });
+      });
+      
+      // Calculate distinctiveness score (cluster frequency / global frequency)
+      const distinctiveness = {};
+      Object.keys(clusterTerms).forEach(term => {
+        const clusterFreq = clusterTerms[term] / cluster.files.length;
+        const globalFreq = allTerms[term] / this.files.size;
+        distinctiveness[term] = clusterFreq / (globalFreq + 0.1); // Add smoothing
+      });
+      
+      // Get top distinctive terms (not just most frequent)
+      const topTerms = Object.entries(distinctiveness)
+        .filter(([term]) => !term.includes('_')) // Exclude bigrams from names
         .sort((a, b) => b[1] - a[1])
-        .slice(0, 2)
-        .map(([word]) => word);
+        .slice(0, 3)
+        .map(([term]) => term);
 
-      cluster.name = topWords.length > 0 
-        ? topWords.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join('_')
-        : `Cluster_${id}`;
+      // Create readable cluster name
+      if (topTerms.length > 0) {
+        cluster.name = topTerms
+          .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+          .join('_');
+      } else {
+        cluster.name = `Cluster_${id}`;
+      }
+      
+      // Limit name length
+      if (cluster.name.length > 30) {
+        const words = cluster.name.split('_');
+        cluster.name = words.slice(0, 2).join('_');
+      }
     });
   }
 

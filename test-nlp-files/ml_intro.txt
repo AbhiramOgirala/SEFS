@@ -1,0 +1,1 @@
+Machine learning is a subset of artificial intelligence. It focuses on training algorithms to learn from data and make predictions without explicit programming.
