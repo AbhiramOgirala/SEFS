@@ -8,9 +8,122 @@ const clusterList = document.getElementById('clusterList');
 const tooltip = document.getElementById('tooltip');
 const openingIndicator = document.getElementById('openingIndicator');
 const virtualModeIndicator = document.getElementById('virtualModeIndicator');
+const searchInput = document.getElementById('searchInput');
+const clearSearchBtn = document.getElementById('clearSearch');
+const searchResults = document.getElementById('searchResults');
 
 // Show virtual mode indicator (always on since config.json has virtualMode: true)
 virtualModeIndicator.style.display = 'inline';
+
+// Search functionality
+let searchTimeout = null;
+
+searchInput.addEventListener('input', (e) => {
+  const query = e.target.value.trim();
+  
+  // Show/hide clear button
+  clearSearchBtn.style.display = query ? 'block' : 'none';
+  
+  // Debounce search
+  clearTimeout(searchTimeout);
+  
+  if (!query) {
+    searchResults.style.display = 'none';
+    searchResults.innerHTML = '';
+    return;
+  }
+  
+  searchTimeout = setTimeout(async () => {
+    await performSearch(query);
+  }, 300);
+});
+
+clearSearchBtn.addEventListener('click', () => {
+  searchInput.value = '';
+  clearSearchBtn.style.display = 'none';
+  searchResults.style.display = 'none';
+  searchResults.innerHTML = '';
+  searchInput.focus();
+});
+
+async function performSearch(query) {
+  const results = await window.sefs.searchFiles(query);
+  displaySearchResults(results, query);
+}
+
+function displaySearchResults(results, query) {
+  if (results.length === 0) {
+    searchResults.innerHTML = '<div class="search-no-results">No files found matching your search.</div>';
+    searchResults.style.display = 'block';
+    return;
+  }
+  
+  const queryLower = query.toLowerCase();
+  
+  searchResults.innerHTML = results.map(result => {
+    // Highlight search term in filename
+    const highlightedName = highlightText(result.name, query);
+    
+    // Highlight search term in preview
+    const highlightedPreview = highlightText(result.preview, query);
+    
+    return `
+      <div class="search-result-item" data-path="${escapeHtml(result.path)}">
+        <div class="search-result-filename">${highlightedName}</div>
+        <div class="search-result-path">${escapeHtml(result.path)}</div>
+        <div class="search-result-preview">${highlightedPreview}</div>
+        <span class="search-result-cluster">📁 ${escapeHtml(result.cluster)}</span>
+      </div>
+    `;
+  }).join('');
+  
+  searchResults.style.display = 'block';
+  
+  // Add click handlers to search results
+  document.querySelectorAll('.search-result-item').forEach(item => {
+    item.addEventListener('click', async () => {
+      const filePath = item.getAttribute('data-path');
+      await openFile(filePath);
+      
+      // Clear search after opening file
+      searchInput.value = '';
+      clearSearchBtn.style.display = 'none';
+      searchResults.style.display = 'none';
+    });
+  });
+}
+
+function highlightText(text, query) {
+  if (!text || !query) return escapeHtml(text);
+  
+  const escapedText = escapeHtml(text);
+  const queryLower = query.toLowerCase();
+  const textLower = text.toLowerCase();
+  
+  let result = '';
+  let lastIndex = 0;
+  let index = textLower.indexOf(queryLower);
+  
+  while (index !== -1) {
+    // Add text before match
+    result += escapedText.substring(lastIndex, index);
+    // Add highlighted match
+    result += `<span class="search-highlight">${escapedText.substring(index, index + query.length)}</span>`;
+    lastIndex = index + query.length;
+    index = textLower.indexOf(queryLower, lastIndex);
+  }
+  
+  // Add remaining text
+  result += escapedText.substring(lastIndex);
+  
+  return result;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
 
 // Event Listeners
 selectFolderBtn.addEventListener('click', async () => {

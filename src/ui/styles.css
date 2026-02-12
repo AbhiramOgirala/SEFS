@@ -218,3 +218,122 @@ main {
 ::-webkit-scrollbar-thumb:hover {
   background: #e94560;
 }
+
+/* Search Bar Styles */
+#searchBar {
+  background: #16213e;
+  padding: 1rem 2rem;
+  border-bottom: 2px solid #0f3460;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  position: relative;
+}
+
+#searchInput {
+  flex: 1;
+  background: #0f1419;
+  border: 2px solid #0f3460;
+  border-radius: 6px;
+  padding: 0.7rem 1rem;
+  color: #eee;
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+#searchInput:focus {
+  border-color: #e94560;
+}
+
+#searchInput::placeholder {
+  color: #666;
+}
+
+#clearSearch {
+  background: #0f3460;
+  color: #eee;
+  border: none;
+  padding: 0.7rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: background 0.2s;
+}
+
+#clearSearch:hover {
+  background: #e94560;
+}
+
+#searchResults {
+  position: absolute;
+  top: 100%;
+  left: 2rem;
+  right: 2rem;
+  background: #16213e;
+  border: 2px solid #0f3460;
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  max-height: 400px;
+  overflow-y: auto;
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.search-result-item {
+  padding: 1rem;
+  border-bottom: 1px solid #0f3460;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.search-result-item:last-child {
+  border-bottom: none;
+}
+
+.search-result-item:hover {
+  background: #0f3460;
+}
+
+.search-result-filename {
+  font-weight: 600;
+  color: #e94560;
+  margin-bottom: 0.3rem;
+  font-size: 0.95rem;
+}
+
+.search-result-path {
+  color: #888;
+  font-size: 0.8rem;
+  margin-bottom: 0.5rem;
+}
+
+.search-result-preview {
+  color: #ccc;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.search-highlight {
+  background: #e94560;
+  color: #fff;
+  padding: 0.1rem 0.2rem;
+  border-radius: 2px;
+}
+
+.search-no-results {
+  padding: 2rem;
+  text-align: center;
+  color: #888;
+  font-size: 0.9rem;
+}
+
+.search-result-cluster {
+  display: inline-block;
+  background: #0f3460;
+  color: #e94560;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  margin-top: 0.3rem;
+}

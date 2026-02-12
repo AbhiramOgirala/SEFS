@@ -1140,6 +1140,76 @@ class SemanticEngine {
       await this.organizeFolders();
     }
   }
+
+
+    searchFiles(query) {
+      if (!query || query.trim().length === 0) {
+        return [];
+      }
+
+      const searchTerm = query.toLowerCase().trim();
+      const results = [];
+
+      // Search through all files
+      this.files.forEach((fileData, filePath) => {
+        const fileName = path.basename(filePath).toLowerCase();
+        const content = fileData.content.toLowerCase();
+
+        // Check if filename matches
+        const filenameMatch = fileName.includes(searchTerm);
+
+        // Check if content matches
+        const contentMatch = content.includes(searchTerm);
+
+        if (filenameMatch || contentMatch) {
+          // Find which cluster this file belongs to
+          let clusterName = 'Unclustered';
+          this.clusters.forEach((cluster) => {
+            if (cluster.files.includes(filePath)) {
+              clusterName = cluster.name;
+            }
+          });
+
+          // Extract preview with context around the match
+          let preview = '';
+          if (contentMatch) {
+            const index = content.indexOf(searchTerm);
+            const start = Math.max(0, index - 50);
+            const end = Math.min(content.length, index + searchTerm.length + 50);
+            preview = fileData.content.substring(start, end);
+
+            // Add ellipsis if truncated
+            if (start > 0) preview = '...' + preview;
+            if (end < content.length) preview = preview + '...';
+          } else {
+            // Just show beginning of content if only filename matched
+            preview = fileData.content.substring(0, 100);
+            if (fileData.content.length > 100) preview += '...';
+          }
+
+          results.push({
+            path: filePath,
+            name: path.basename(filePath),
+            cluster: clusterName,
+            preview: preview,
+            matchType: filenameMatch ? 'filename' : 'content',
+            filenameMatch,
+            contentMatch
+          });
+        }
+      });
+
+      // Sort results: filename matches first, then by relevance
+      results.sort((a, b) => {
+        if (a.filenameMatch && !b.filenameMatch) return -1;
+        if (!a.filenameMatch && b.filenameMatch) return 1;
+        return 0;
+      });
+
+      return results;
+    }
 }
 
 module.exports = SemanticEngine;
+
+

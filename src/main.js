@@ -87,6 +87,11 @@ ipcMain.handle('open-file', async (event, filePath) => {
   }
 });
 
+ipcMain.handle('search-files', async (event, query) => {
+  if (!semanticEngine) return [];
+  return semanticEngine.searchFiles(query);
+});
+
 async function initializeSystem(rootPath) {
   try {
     // Stop existing monitor
