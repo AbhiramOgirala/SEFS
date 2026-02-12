@@ -353,13 +353,14 @@ function renderVisualization() {
     circle.setAttribute('class', 'cluster-boundary');
     g.appendChild(circle);
     
-    // Cluster label
+    // Cluster label with better styling and readable formatting
     const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     label.setAttribute('x', cluster.x);
-    label.setAttribute('y', cluster.y - cluster.radius - 10);
+    label.setAttribute('y', cluster.y - cluster.radius - 20);
     label.setAttribute('class', 'node-text');
-    label.setAttribute('style', 'font-size: 14px; font-weight: 600;');
-    label.textContent = cluster.name;
+    label.setAttribute('style', 'font-size: 16px; font-weight: 700; fill: #ff6b9d; letter-spacing: 1px;');
+    // Replace underscores with spaces for display and add file count
+    label.textContent = `${cluster.name.replace(/_/g, ' ')} (${cluster.files.length})`;
     g.appendChild(label);
     
     canvas.appendChild(g);
@@ -367,30 +368,29 @@ function renderVisualization() {
   
   // Draw file nodes
   clusterPositions.forEach((cluster, idx) => {
-    cluster.files.forEach((file, fileIdx) => {
-      const angle = (fileIdx / cluster.files.length) * 2 * Math.PI;
-      const radius = cluster.radius * 0.6;
+    const fileCount = cluster.files.length;
+    const maxNodesToShow = 8; // Limit nodes to prevent clutter
+    const filesToShow = cluster.files.slice(0, maxNodesToShow);
+    
+    filesToShow.forEach((file, fileIdx) => {
+      const angle = (fileIdx / filesToShow.length) * 2 * Math.PI;
+      const radius = cluster.radius * 0.65;
       const x = cluster.x + Math.cos(angle) * radius;
       const y = cluster.y + Math.sin(angle) * radius;
       
       const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
       g.setAttribute('class', 'node');
       
-      // File circle
+      // File circle - smaller size
       const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
       circle.setAttribute('cx', x);
       circle.setAttribute('cy', y);
-      circle.setAttribute('r', 20);
+      circle.setAttribute('r', 15);
       circle.setAttribute('class', 'node-circle');
       g.appendChild(circle);
       
-      // File name (truncated)
-      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      text.setAttribute('x', x);
-      text.setAttribute('y', y + 35);
-      text.setAttribute('class', 'node-text');
-      text.textContent = truncate(file.name, 15);
-      g.appendChild(text);
+      // No file name labels - cleaner look
+      // Only show on hover via tooltip
       
       // Event handlers
       g.addEventListener('mouseenter', (e) => showTooltip(e, file));
@@ -411,18 +411,36 @@ function renderVisualization() {
       
       canvas.appendChild(g);
     });
+    
+    // Show count indicator if there are more files
+    if (fileCount > maxNodesToShow) {
+      const countLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      countLabel.setAttribute('x', cluster.x);
+      countLabel.setAttribute('y', cluster.y + 5);
+      countLabel.setAttribute('class', 'node-text');
+      countLabel.setAttribute('style', 'font-size: 14px; font-weight: 600; fill: #9ca3af;');
+      countLabel.textContent = `+${fileCount - maxNodesToShow} more`;
+      canvas.appendChild(countLabel);
+    }
   });
 }
 
 function calculateClusterPositions(clusters, width, height) {
-  const padding = 100;
+  const padding = 140;
   const positions = [];
   
   const cols = Math.ceil(Math.sqrt(clusters.length));
   const rows = Math.ceil(clusters.length / cols);
   
-  const cellWidth = (width - padding * 2) / cols;
-  const cellHeight = (height - padding * 2) / rows;
+  // Add spacing between clusters
+  const spacingMultiplier = 1.3; // Increase cell size to create gaps
+  const cellWidth = (width - padding * 2) / cols * spacingMultiplier;
+  const cellHeight = (height - padding * 2) / rows * spacingMultiplier;
+  
+  // Find min and max file counts for scaling
+  const fileCounts = clusters.map(c => c.files.length);
+  const minFiles = Math.min(...fileCounts);
+  const maxFiles = Math.max(...fileCounts);
   
   clusters.forEach((cluster, idx) => {
     const col = idx % cols;
@@ -430,7 +448,17 @@ function calculateClusterPositions(clusters, width, height) {
     
     const x = padding + col * cellWidth + cellWidth / 2;
     const y = padding + row * cellHeight + cellHeight / 2;
-    const radius = Math.min(cellWidth, cellHeight) / 2.5;
+    
+    // Calculate base radius - keep circles large but with more space between them
+    const baseRadius = Math.min(cellWidth, cellHeight) / 3.2;
+    
+    // Scale radius based on file count (between 0.75 and 1.15 of base)
+    let scaleFactor = 1;
+    if (maxFiles > minFiles) {
+      scaleFactor = 0.75 + (0.4 * (cluster.files.length - minFiles) / (maxFiles - minFiles));
+    }
+    
+    const radius = baseRadius * scaleFactor;
     
     positions.push({
       x,
@@ -458,7 +486,8 @@ function renderSidebar() {
     
     const nameDiv = document.createElement('div');
     nameDiv.className = 'cluster-name';
-    nameDiv.textContent = `${cluster.name} (${cluster.files.length})`;
+    // Replace underscores with spaces for display
+    nameDiv.textContent = `${cluster.name.replace(/_/g, ' ')} (${cluster.files.length})`;
     clusterDiv.appendChild(nameDiv);
     
     cluster.files.forEach(file => {
