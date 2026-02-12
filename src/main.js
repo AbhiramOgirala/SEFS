@@ -106,6 +106,35 @@ async function initializeSystem(rootPath) {
       mainWindow.webContents.send('structure-updated', structure);
     });
     
+    // Handle new files detected
+    fileMonitor.on('new-files-detected', async (filePaths) => {
+      const fileNames = filePaths.map(fp => path.basename(fp));
+      const fileCount = filePaths.length;
+      
+      const message = fileCount === 1 
+        ? `New file detected:\n\n${fileNames[0]}\n\nDo you want to read and cluster this file?`
+        : `${fileCount} new files detected:\n\n${fileNames.slice(0, 5).join('\n')}${fileCount > 5 ? `\n... and ${fileCount - 5} more` : ''}\n\nDo you want to read and cluster these files?`;
+      
+      const response = await dialog.showMessageBox(mainWindow, {
+        type: 'question',
+        buttons: ['Yes', 'No'],
+        defaultId: 0,
+        title: 'New Files Detected',
+        message: message,
+        detail: 'The files will be analyzed and automatically organized into semantic clusters.'
+      });
+      
+      if (response.response === 0) {
+        // User clicked Yes
+        console.log('User confirmed processing new files');
+        await fileMonitor.processNewFiles(filePaths);
+      } else {
+        // User clicked No
+        console.log('User declined processing new files');
+        fileMonitor.cancelNewFiles();
+      }
+    });
+    
     fileMonitor.start();
   } catch (error) {
     console.error('Error initializing system:', error);
