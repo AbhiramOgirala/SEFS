@@ -92,6 +92,48 @@ ipcMain.handle('search-files', async (event, query) => {
   return semanticEngine.searchFiles(query);
 });
 
+ipcMain.handle('rename-file', async (event, oldPath, newName) => {
+  if (!semanticEngine) return { success: false, error: 'System not initialized' };
+  
+  const result = await semanticEngine.renameFile(oldPath, newName);
+  
+  if (result.success) {
+    // Send updated structure to UI
+    const structure = semanticEngine.getFileStructure();
+    mainWindow.webContents.send('structure-updated', structure);
+  }
+  
+  return result;
+});
+
+ipcMain.handle('delete-file', async (event, filePath) => {
+  if (!semanticEngine) return { success: false, error: 'System not initialized' };
+  
+  // Show confirmation dialog
+  const response = await dialog.showMessageBox(mainWindow, {
+    type: 'warning',
+    buttons: ['Delete', 'Cancel'],
+    defaultId: 1,
+    title: 'Confirm Delete',
+    message: `Are you sure you want to delete this file?`,
+    detail: `${path.basename(filePath)}\n\nThis action cannot be undone.`
+  });
+  
+  if (response.response !== 0) {
+    return { success: false, error: 'User cancelled' };
+  }
+  
+  const result = await semanticEngine.deleteFile(filePath);
+  
+  if (result.success) {
+    // Send updated structure to UI
+    const structure = semanticEngine.getFileStructure();
+    mainWindow.webContents.send('structure-updated', structure);
+  }
+  
+  return result;
+});
+
 async function initializeSystem(rootPath) {
   try {
     // Stop existing monitor

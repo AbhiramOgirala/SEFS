@@ -1208,6 +1208,100 @@ class SemanticEngine {
 
       return results;
     }
+
+  async renameFile(oldPath, newName) {
+    const fs = require('fs').promises;
+    
+    try {
+      // Validate new name
+      if (!newName || newName.trim().length === 0) {
+        throw new Error('New filename cannot be empty');
+      }
+
+      // Check if file exists
+      if (!this.files.has(oldPath)) {
+        throw new Error('File not found in system');
+      }
+
+      // Create new path
+      const dir = path.dirname(oldPath);
+      const newPath = path.join(dir, newName);
+
+      // Check if new path already exists
+      const fsSync = require('fs');
+      if (fsSync.existsSync(newPath)) {
+        throw new Error('A file with this name already exists');
+      }
+
+      // Rename the actual file
+      await fs.rename(oldPath, newPath);
+
+      // Update internal data structures
+      const fileData = this.files.get(oldPath);
+      this.files.delete(oldPath);
+      this.files.set(newPath, fileData);
+
+      // Update cluster references
+      this.clusters.forEach((cluster) => {
+        const index = cluster.files.indexOf(oldPath);
+        if (index !== -1) {
+          cluster.files[index] = newPath;
+        }
+      });
+
+      console.log(`✓ File renamed: ${path.basename(oldPath)} → ${newName}`);
+      
+      return { success: true, newPath };
+    } catch (error) {
+      console.error('Error renaming file:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async deleteFile(filePath) {
+    const fs = require('fs').promises;
+    
+    try {
+      // Check if file exists in system
+      if (!this.files.has(filePath)) {
+        throw new Error('File not found in system');
+      }
+
+      // Delete the actual file
+      await fs.unlink(filePath);
+
+      // Remove from internal data structures
+      this.files.delete(filePath);
+
+      // Remove from clusters
+      this.clusters.forEach((cluster) => {
+        const index = cluster.files.indexOf(filePath);
+        if (index !== -1) {
+          cluster.files.splice(index, 1);
+        }
+      });
+
+      // Remove empty clusters
+      const emptyClusters = [];
+      this.clusters.forEach((cluster, id) => {
+        if (cluster.files.length === 0) {
+          emptyClusters.push(id);
+        }
+      });
+      
+      emptyClusters.forEach(id => {
+        console.log(`  Removing empty cluster: ${this.clusters.get(id).name}`);
+        this.clusters.delete(id);
+      });
+
+      console.log(`✓ File deleted: ${path.basename(filePath)}`);
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Error deleting file:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
 }
 
 module.exports = SemanticEngine;

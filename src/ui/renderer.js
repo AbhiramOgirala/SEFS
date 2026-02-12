@@ -125,6 +125,182 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// Context Menu and File Operations
+let contextMenu = null;
+let currentContextFile = null;
+
+function showContextMenu(event, filePath, fileName) {
+  event.preventDefault();
+  event.stopPropagation();
+  
+  // Remove existing context menu
+  if (contextMenu) {
+    contextMenu.remove();
+  }
+  
+  currentContextFile = { path: filePath, name: fileName };
+  
+  // Create context menu
+  contextMenu = document.createElement('div');
+  contextMenu.className = 'context-menu';
+  contextMenu.innerHTML = `
+    <div class="context-menu-item" data-action="open">
+      📂 Open
+    </div>
+    <div class="context-menu-item" data-action="rename">
+      ✏️ Rename
+    </div>
+    <div class="context-menu-separator"></div>
+    <div class="context-menu-item danger" data-action="delete">
+      🗑️ Delete
+    </div>
+  `;
+  
+  // Position context menu
+  contextMenu.style.left = event.pageX + 'px';
+  contextMenu.style.top = event.pageY + 'px';
+  
+  document.body.appendChild(contextMenu);
+  
+  // Add click handlers
+  contextMenu.querySelectorAll('.context-menu-item').forEach(item => {
+    item.addEventListener('click', async (e) => {
+      const action = e.currentTarget.getAttribute('data-action');
+      contextMenu.remove();
+      contextMenu = null;
+      
+      switch (action) {
+        case 'open':
+          await openFile(currentContextFile.path);
+          break;
+        case 'rename':
+          showRenameDialog(currentContextFile.path, currentContextFile.name);
+          break;
+        case 'delete':
+          await deleteFileAction(currentContextFile.path);
+          break;
+      }
+    });
+  });
+}
+
+// Close context menu when clicking elsewhere
+document.addEventListener('click', () => {
+  if (contextMenu) {
+    contextMenu.remove();
+    contextMenu = null;
+  }
+});
+
+function showRenameDialog(filePath, currentName) {
+  // Create modal overlay
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.innerHTML = `
+    <div class="modal-title">Rename File</div>
+    <div class="modal-content">
+      <label class="modal-label">New filename:</label>
+      <input type="text" class="modal-input" id="renameInput" value="${escapeHtml(currentName)}" />
+      <div class="modal-error" id="renameError" style="display: none;"></div>
+    </div>
+    <div class="modal-buttons">
+      <button class="modal-button" id="renameCancelBtn">Cancel</button>
+      <button class="modal-button primary" id="renameConfirmBtn">Rename</button>
+    </div>
+  `;
+  
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+  
+  const input = document.getElementById('renameInput');
+  const errorDiv = document.getElementById('renameError');
+  const cancelBtn = document.getElementById('renameCancelBtn');
+  const confirmBtn = document.getElementById('renameConfirmBtn');
+  
+  // Select filename without extension
+  const lastDot = currentName.lastIndexOf('.');
+  if (lastDot > 0) {
+    input.setSelectionRange(0, lastDot);
+  } else {
+    input.select();
+  }
+  input.focus();
+  
+  // Cancel button
+  cancelBtn.addEventListener('click', () => {
+    overlay.remove();
+  });
+  
+  // Confirm button
+  confirmBtn.addEventListener('click', async () => {
+    const newName = input.value.trim();
+    
+    if (!newName) {
+      errorDiv.textContent = 'Filename cannot be empty';
+      errorDiv.style.display = 'block';
+      return;
+    }
+    
+    if (newName === currentName) {
+      overlay.remove();
+      return;
+    }
+    
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Renaming...';
+    
+    const result = await window.sefs.renameFile(filePath, newName);
+    
+    if (result.success) {
+      overlay.remove();
+    } else {
+      errorDiv.textContent = result.error || 'Failed to rename file';
+      errorDiv.style.display = 'block';
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'Rename';
+    }
+  });
+  
+  // Enter key to confirm
+  input.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      confirmBtn.click();
+    }
+  });
+  
+  // Escape key to cancel
+  overlay.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      overlay.remove();
+    }
+  });
+}
+
+async function deleteFileAction(filePath) {
+  const result = await window.sefs.deleteFile(filePath);
+  
+  if (!result.success && result.error !== 'User cancelled') {
+    alert(`Failed to delete file: ${result.error}`);
+  }
+}
+
+async function openFile(filePath) {
+  console.log('Opening file:', filePath);
+  showOpeningIndicator();
+  try {
+    await window.sefs.openFile(filePath);
+    console.log('File opened successfully');
+    hideOpeningIndicator();
+  } catch (error) {
+    console.error('Error opening file:', error);
+    hideOpeningIndicator();
+    alert(`Could not open file: ${error.message}`);
+  }
+}
+
 // Event Listeners
 selectFolderBtn.addEventListener('click', async () => {
   const result = await window.sefs.selectRootFolder();
@@ -289,19 +465,18 @@ function renderSidebar() {
       const fileDiv = document.createElement('div');
       fileDiv.className = 'file-item';
       fileDiv.textContent = file.name;
+      
+      // Left click to open
       fileDiv.addEventListener('click', async () => {
         console.log('Opening file from sidebar:', file.path);
-        showOpeningIndicator();
-        try {
-          await window.sefs.openFile(file.path);
-          console.log('File opened successfully');
-          hideOpeningIndicator();
-        } catch (error) {
-          console.error('Error opening file:', error);
-          hideOpeningIndicator();
-          alert(`Could not open file: ${error.message}`);
-        }
+        await openFile(file.path);
       });
+      
+      // Right click for context menu
+      fileDiv.addEventListener('contextmenu', (e) => {
+        showContextMenu(e, file.path, file.name);
+      });
+      
       clusterDiv.appendChild(fileDiv);
     });
     
