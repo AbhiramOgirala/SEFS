@@ -129,13 +129,14 @@ class SemanticEngine {
       
       if (isDuplicate) {
         console.warn(`⚠️  Duplicate content detected for ${path.basename(filePath)}, using filename instead`);
-        // Use filename-based content
+        // Use filename-based content with heavy repetition for better weight
         const fileName = path.basename(filePath, path.extname(filePath));
         const words = fileName
           .replace(/[_-]/g, ' ')
           .replace(/([a-z])([A-Z])/g, '$1 $2')
           .toLowerCase();
-        const filenameContent = `${words} ${words} ${words}`;
+        // Repeat 10x to match weight of actual content files
+        const filenameContent = Array(10).fill(words).join(' ');
         const vector = this.textToVector(filenameContent);
         
         this.files.set(filePath, {
@@ -201,23 +202,23 @@ class SemanticEngine {
           } else {
             // PDF parsed but no text - might be image-based PDF
             console.warn(`PDF has no extractable text: ${path.basename(filePath)}`);
-            // Use enhanced filename analysis
+            // Use enhanced filename analysis with heavy repetition
             const words = fileName
               .replace(/[_-]/g, ' ')
               .replace(/([a-z])([A-Z])/g, '$1 $2')
               .toLowerCase();
-            // Repeat key terms to give them more weight
-            return `${words} ${words} ${words} document pdf file`;
+            // Repeat 10x to give adequate weight
+            return Array(10).fill(words).join(' ');
           }
         } catch (pdfError) {
           console.warn(`PDF extraction failed for ${path.basename(filePath)}: ${pdfError.message}`);
-          // Fallback: use enhanced filename for clustering
+          // Fallback: use enhanced filename for clustering with heavy repetition
           const words = fileName
             .replace(/[_-]/g, ' ')
             .replace(/([a-z])([A-Z])/g, '$1 $2')
             .toLowerCase();
-          // Repeat key terms multiple times to give them more weight in clustering
-          return `${words} ${words} ${words} document pdf file`;
+          // Repeat 10x to give adequate weight in clustering
+          return Array(10).fill(words).join(' ');
         }
       }
       
